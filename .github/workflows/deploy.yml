@@ -1,0 +1,34 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to EC2
+        uses: easingthemes/ssh-deploy@v4
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+          remote-host: ${{ secrets.EC2_HOST }}
+          remote-user: ${{ secrets.EC2_USERNAME }}
+          source: .
+          target: /home/${{ secrets.EC2_USERNAME }}/car-brand-predictor
+          exclude: ".venv,__pycache__,.git"
+
+      - name: Build and run Docker on EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.EC2_USERNAME }}/car-brand-predictor
+            docker build -t car-brand-predictor .
+            docker stop car-brand-predictor || true
+            docker rm car-brand-predictor || true
+            docker run -d --name car-brand-predictor -p 80:5000 --restart unless-stopped car-brand-predictor
