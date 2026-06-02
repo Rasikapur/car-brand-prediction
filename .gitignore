@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .env
 car_brand_model.joblib
+mlflow.db
+mlruns/
