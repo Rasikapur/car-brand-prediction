@@ -1,26 +1,49 @@
-name: Deploy to EC2
+name: Build & Deploy to EC2
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest flake8 -r requirements.txt
+      - run: python train.py
+      - run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv,venv
+      - run: pytest tests/ -v
+
+  build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy files to EC2
-        uses: easingthemes/ssh-deploy@v4
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-          REMOTE_HOST: ${{ secrets.EC2_HOST }}
-          REMOTE_USER: ${{ secrets.EC2_USERNAME }}
-          SOURCE: "."
-          TARGET: /home/${{ secrets.EC2_USERNAME }}/car-brand-predictor
-          EXCLUDE: ".venv,__pycache__,.git"
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and run Docker on EC2
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/car-brand-predictor:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -28,7 +51,19 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/${{ secrets.EC2_USERNAME }}/car-brand-predictor
-            docker build -t car-brand-predictor .
-            docker stop car-brand-predictor || true
-            docker rm car-brand-predictor || true
-            docker run -d --name car-brand-predictor -p 80:5000 --restart unless-stopped car-brand-predictor
+
+            # Pull latest docker-compose and config from repo
+            git pull origin main
+
+            # Pull latest image
+            docker pull ${{ secrets.DOCKER_USERNAME }}/car-brand-predictor:latest
+
+            # Update docker-compose to use the pulled image
+            export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+
+            # Restart services
+            docker compose down
+            docker compose up -d
+
+            # Clean up old images
+            docker image prune -f
