@@ -27,7 +27,7 @@ import joblib
 
 DATA_PATH = "car_sales_data.csv"
 MODEL_PATH = "car_brand_model.joblib"
-MLFLOW_TRACKING_URI = "sqlite:///mlflow.db"
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
 
 
 def load_data(path=DATA_PATH):

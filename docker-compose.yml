@@ -18,7 +18,8 @@ services:
       sh -c "pip install -q mlflow==2.20.4 &&
              mlflow server --host 0.0.0.0 --port 5001
                --backend-store-uri sqlite:///data/mlflow.db
-               --default-artifact-root /data/mlruns"
+               --default-artifact-root /data/mlruns
+               --serve-artifacts"
     ports:
       - "5001:5001"
     volumes:
