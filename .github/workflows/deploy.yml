@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: car-brand-predictor
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,18 +29,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build and push Docker image
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/car-brand-predictor:latest
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
 
   deploy:
     needs: build-and-push
@@ -50,16 +60,21 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+            export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
+            export ECR_REPOSITORY=${{ env.ECR_REPOSITORY }}
+
             cd /home/${{ secrets.EC2_USERNAME }}/car-brand-predictor
 
-            # Pull latest docker-compose and config from repo
+            # Pull latest config from repo
             git pull origin main
 
-            # Pull latest image
-            docker pull ${{ secrets.DOCKER_USERNAME }}/car-brand-predictor:latest
-
-            # Update docker-compose to use the pulled image
-            export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+            # Authenticate with ECR and pull
+            aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
+              docker login --username AWS --password-stdin $ECR_REGISTRY
+            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
             # Restart services
             docker compose down

@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${DOCKER_USERNAME:-local}/car-brand-predictor:${TAG:-latest}
+    image: ${ECR_REGISTRY:-local}/${ECR_REPOSITORY:-car-brand-predictor}:${TAG:-latest}
     build: .
     container_name: car-brand-predictor
     ports:
